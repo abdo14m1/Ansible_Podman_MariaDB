@@ -1,0 +1,33 @@
+---
+- name: create database files if not present
+  ansible.builtin.file:
+    path: "/db{{item}}/data"
+    state: directory
+  with_sequence: start=1 end=3
+
+- name: create backup files if not present
+  ansible.builtin.file:
+    path: "/db{{item}}/backup"
+    state: directory
+  with_sequence: start=1 end=3
+
+- name: open the ports used by the containers on the host
+  ansible.posix.firewalld:
+    port: 3306-3308/tcp
+    permanent: true
+    state: enabled
+- name: run mariadb containers
+  containers.podman.podman_container:
+    name: "mariaDB_{{ item }}"
+    recreate: true
+    image: docker.io/library/mariadb
+    env:
+      MYSQL_ROOT_PASSWORD: "{{ROOT_PASS}}"
+    volume:
+      - /db{{item}}/data:/var/lib/mysql  # main datafiles
+      - /db{{item}}/backup:/backup       # backup files
+    publish:
+      - "{{ 3306 + ( item | int ) - 1 }}:3306" # publish the three containers on ports 3306, 3307, 3308
+    restart_policy: on-failure:4   #restart the container if failed with max 3 retries
+    privileged: yes
+  with_sequence: start=1 end=3
